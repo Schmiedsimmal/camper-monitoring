@@ -11,6 +11,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from .camera import CameraSource
 from .detector import Detector
+from .overlay import BackupOverlay
 from .trigger import Trigger
 
 log = logging.getLogger(__name__)
@@ -18,7 +19,12 @@ log = logging.getLogger(__name__)
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 
 
-def build_app(camera: CameraSource, detector: Detector, trigger: Trigger) -> FastAPI:
+def build_app(
+    camera: CameraSource,
+    detector: Detector,
+    trigger: Trigger,
+    overlay: BackupOverlay,
+) -> FastAPI:
     app = FastAPI(title="backup-camera")
 
     state = {"fps": 0.0, "detections": 0, "last_detect_ts": 0.0}
@@ -75,6 +81,9 @@ def build_app(camera: CameraSource, detector: Detector, trigger: Trigger) -> Fas
                 frame, dets = detector.detect(frame)
                 state["detections"] = len(dets)
                 state["last_detect_ts"] = time.time()
+                # Overlay (Abstandslinien + Fahrzeug-Kontur) nach Inferenz
+                # zeichnen, damit BBoxes nicht übermalt werden.
+                overlay.draw(frame)
 
             # FPS-Messung
             frames_in_window += 1

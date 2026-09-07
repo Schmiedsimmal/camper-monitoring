@@ -11,6 +11,7 @@ from . import _runtime
 from .camera import CameraSource
 from .config import load_config
 from .detector import Detector
+from .overlay import BackupOverlay
 from .trigger import make_trigger
 from .web import build_app
 
@@ -43,7 +44,10 @@ def main() -> None:
         trigger.available, cfg.trigger.gated,
     )
 
-    app = build_app(camera, detector, trigger)
+    overlay = BackupOverlay(cfg.overlay, cfg.camera.width, cfg.camera.height)
+    log.info("Overlay bereit: enabled=%s", cfg.overlay.enabled)
+
+    app = build_app(camera, detector, trigger, overlay)
 
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=cfg.web.port, log_level="info")

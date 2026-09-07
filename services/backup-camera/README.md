@@ -35,7 +35,36 @@ Siehe Root-`.env.example`, Sektion *Backup-Camera Service*.
 | `TRIGGER_GPIO_PIN` | `24` | BCM-Pin |
 | `TRIGGER_GATED` | `true` | Stream nur bei aktivem Trigger |
 | `TRIGGER_ACTIVE_LOW` | `true` | PC817-Schaltung zieht Pin auf Low |
+| `OVERLAY_ENABLED` | `true` | Abstandslinien + Fahrzeug-Kontur ein |
+| `OVERLAY_CAMERA_HEIGHT` | `0.6` | Kamera-Montagehöhe über Boden [m] |
+| `OVERLAY_CAMERA_TILT` | `15` | Neigung nach unten [Grad] |
+| `OVERLAY_CAMERA_HFOV` | `87` | Horizontaler Sichtwinkel [Grad] |
+| `OVERLAY_VEHICLE_WIDTH` | `2.3` | Fahrzeugbreite [m] |
+| `OVERLAY_DISTANCE_LINES` | `1,2,3,5` | Abstände der Linien [m] |
 | `BACKUP_CAMERA_PORT` | `8080` | Web-Port nach außen |
+
+## Overlay (Abstandslinien + Fahrzeug-Kontur)
+
+Der Service zeichnet klassische Rückfahrkamera-Linien in den Stream:
+
+- **Horizontale Abstandslinien** bei 1 m / 2 m / 3 m / 5 m (`OVERLAY_DISTANCE_LINES`)
+  mit Meter-Beschriftung und Farb-Coding (grün > 2 m, gelb 0.5–2 m, rot < 0.5 m).
+- **Fahrzeug-Kontur** als Trapez, das die Fahrzeugbreite (`OVERLAY_VEHICLE_WIDTH`)
+  in 1/2/3 m Entfernung projiziert — wie die Warnlinien bei Auto-Rückfahrkameras.
+- **Horizont-Marker** (dezente graue Linie) zur Kalibrierungskontrolle.
+
+Die Projektion erfolgt über eine Pinhole-Geometrie aus Kamera-Montagehöhe
+(`OVERLAY_CAMERA_HEIGHT`), Neigung (`OVERLAY_CAMERA_TILT`) und horizontalem
+FOV (`OVERLAY_CAMERA_HFOV`). Diese Parameter nach der Montage einmalig in `.env`
+anpassen, bis die Linien passend liegen.
+
+Für exakte Linien (besonders bei Fisheye-Objektiven) kann später eine
+Chessboard-Kalibrierung durchgeführt werden:
+```bash
+python scripts/calibrate_camera.py --device 0 --output camera_params.npz
+```
+Das Skript speichert Kameramatrix + Verzerrungskoeffizienten. (Noch nicht
+automatisch in die Pipeline eingebunden — kommt als nächster Schritt.)
 
 ## Inferenz-Beschleunigung (TensorRT)
 

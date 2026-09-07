@@ -34,6 +34,22 @@ def _env_list(name: str, default: str) -> list[int]:
     return [int(x.strip()) for x in raw.split(",") if x.strip()]
 
 
+def _env_float_list(name: str, default: str) -> list[float]:
+    raw = _env(name, default)
+    if not raw.strip():
+        return []
+    out = []
+    for x in raw.split(","):
+        x = x.strip()
+        if not x:
+            continue
+        try:
+            out.append(float(x))
+        except ValueError:
+            continue
+    return out
+
+
 @dataclass
 class CameraConfig:
     source: str = field(default_factory=lambda: _env("CAMERA_SOURCE", "usb:0"))
@@ -79,6 +95,48 @@ class TriggerConfig:
 
 
 @dataclass
+class OverlayConfig:
+    # Overlay (Abstandslinien + Fahrzeug-Kontur) ein-/ausschalten.
+    enabled: bool = field(
+        default_factory=lambda: _env("OVERLAY_ENABLED", "true").lower() == "true"
+    )
+    # Kamera-Montagehöhe über dem Boden [m]. Typisch Camper-Heck: 1.0-1.5m.
+    camera_height: float = field(
+        default_factory=lambda: _env_float("OVERLAY_CAMERA_HEIGHT", 1.2)
+    )
+    # Neigungswinkel der Kamera nach unten [Grad]. 0 = waagerecht, 90 = senkrecht nach unten.
+    # Typisch Rückfahrkamera: 5-15°.
+    camera_tilt: float = field(
+        default_factory=lambda: _env_float("OVERLAY_CAMERA_TILT", 10.0)
+    )
+    # Horizontaler Sichtwinkel (FOV) der Kamera [Grad].
+    # IMX291 mit 3.6mm M12: ~87° H. Mit 2.8mm: ~110°. Fisheye: 130-150°.
+    # Breiterer FOV = mehr Boden sichtbar = Linien weiter reichend.
+    camera_hfov: float = field(
+        default_factory=lambda: _env_float("OVERLAY_CAMERA_HFOV", 130.0)
+    )
+    # Fahrzeugbreite [m] — für die projizierte Fahrzeug-Kontur.
+    vehicle_width: float = field(
+        default_factory=lambda: _env_float("OVERLAY_VEHICLE_WIDTH", 2.3)
+    )
+    # Abstände der horizontalen Linien hinter dem Fahrzeug [m], komma-separiert.
+    # Bei 1.2m Höhe + 130° FOV sind 0.5/1/2m gut sichtbar; 3m knapp an der Grenze.
+    distance_lines: list[float] = field(
+        default_factory=lambda: _env_float_list("OVERLAY_DISTANCE_LINES", "0.5,1,2,3")
+    )
+    # Linien-Farben (BGR). Reihenfolge: grün/gelb/rot für die Zonen.
+    # Standard: grün = sicher, gelb = Vorsicht, rot = STOP.
+    color_green: tuple[int, int, int] = (0, 200, 0)
+    color_yellow: tuple[int, int, int] = (0, 220, 220)
+    color_red: tuple[int, int, int] = (0, 0, 220)
+    color_line: tuple[int, int, int] = (255, 255, 255)
+    color_text: tuple[int, int, int] = (255, 255, 255)
+    # Zonen-Grenzen [m] für Farb-Coding der Linien.
+    zone_green_max: float = 2.0   # < zone_green_max -> grün
+    zone_yellow_max: float = 0.5  # < zone_yellow_max -> gelb, darunter rot
+
+
+@dataclass
 class WebConfig:
     port: int = field(default_factory=lambda: _env_int("BACKUP_CAMERA_PORT", 8080))
 
@@ -88,6 +146,7 @@ class Config:
     camera: CameraConfig = field(default_factory=CameraConfig)
     detector: DetectorConfig = field(default_factory=DetectorConfig)
     trigger: TriggerConfig = field(default_factory=TriggerConfig)
+    overlay: OverlayConfig = field(default_factory=OverlayConfig)
     web: WebConfig = field(default_factory=WebConfig)
 
 
