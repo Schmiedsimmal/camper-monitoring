@@ -19,9 +19,12 @@ services:
       - NVIDIA_DRIVER_CAPABILITIES=
       - PYTHONUNBUFFERED=1
       - TZ=${TZ:-Europe/Berlin}
-    # GPIO und Video-Devices auf x86-Dev-Maschinen nicht vorhanden.
-    # !reset setzt die Liste zurueck (docker compose v2+).
-    devices: !reset []
+    # GPIO gibt es auf x86 nicht. Video-Device: RealSense D455F RGB-Stream
+    # liegt auf /dev/video6 (Host) und wird als /dev/video0 (Container)
+    # gemappt. Auf dem Jetson: Override loeschen, dann gilt docker-compose.yml.
+    # !override ersetzt die Device-Liste aus docker-compose.yml komplett.
+    devices: !override
+      - /dev/video6:/dev/video0
     volumes:
       - /sys:/sys:ro
       - backup-camera-models:/app/models
