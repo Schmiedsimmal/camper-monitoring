@@ -116,13 +116,14 @@ class OverlayConfig:
         default_factory=lambda: _env_float("OVERLAY_CAMERA_HFOV", 130.0)
     )
     # Fahrzeugbreite [m] — für die projizierte Fahrzeug-Kontur.
+    # Iveco Daily IV 35S12: 1996 mm -> 2.0 m.
     vehicle_width: float = field(
-        default_factory=lambda: _env_float("OVERLAY_VEHICLE_WIDTH", 2.3)
+        default_factory=lambda: _env_float("OVERLAY_VEHICLE_WIDTH", 2.0)
     )
     # Abstände der horizontalen Linien hinter dem Fahrzeug [m], komma-separiert.
-    # Bei 1.2m Höhe + 130° FOV sind 0.5/1/2m gut sichtbar; 3m knapp an der Grenze.
+    # Bei 1.2m Höhe + 10° Neigung + 130° FOV sind 1/2/3/5m gut sichtbar.
     distance_lines: list[float] = field(
-        default_factory=lambda: _env_float_list("OVERLAY_DISTANCE_LINES", "0.5,1,2,3")
+        default_factory=lambda: _env_float_list("OVERLAY_DISTANCE_LINES", "1,2,3,5")
     )
     # Linien-Farben (BGR). Reihenfolge: grün/gelb/rot für die Zonen.
     # Standard: grün = sicher, gelb = Vorsicht, rot = STOP.

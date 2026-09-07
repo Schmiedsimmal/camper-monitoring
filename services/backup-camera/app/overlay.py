@@ -61,14 +61,35 @@ class BackupOverlay:
         """Projiziert einen Bodenpunkt im Abstand distance_m (ab Punkt direkt
         unter der Kamera) auf die normierte Bild-y-Koordinate [0=oben, 1=unten].
 
+        Geometrie (Seitenansicht, Kamera in Höhe h, Optikachse um tilt nach
+        unten geneigt):
+
+            Horizont ─────────────────────────────
+                       ╲  alpha = atan(h/d)  (Winkel unter dem Horizont)
+                        ╲
+                         ╲  Optikachse (tilt)
+                          ╲
+                           ● Kamera (Höhe h)
+                           │
+                           │ h
+                           │
+            ───────●─────── Boden
+                   d (Abstand hinter Fahrzeug)
+
+        - d klein (nah)  -> alpha groß  -> Punkt weit unten im Bild
+        - d groß  (weit) -> alpha klein -> Punkt nah am Horizont (oben)
+
         Liefert None, wenn der Punkt außerhalb des Sichtfelds liegt.
         """
         h = self.cfg.camera_height
         if distance_m <= 0:
             return None
-        alpha = math.atan(distance_m / h)        # Winkel ab Horizont nach unten
-        beta = alpha - self.tilt_rad             # Winkel relativ zur Optikachse
-        # beta>0 -> unterhalb der Bildmitte, beta<0 -> oberhalb
+        # Winkel vom Horizont (nach unten) zum Bodenpunkt.
+        alpha = math.atan(h / distance_m)
+        # Winkel relativ zur Optikachse (tilt = Neigung der Optikachse unter den Horizont).
+        beta = alpha - self.tilt_rad
+        # beta>0 -> Punkt unterhalb der Optikachse -> weiter unten im Bild
+        # beta<0 -> Punkt oberhalb der Optikachse -> weiter oben (Richtung Horizont)
         y_norm = 0.5 + (beta / (self.vfov_rad / 2.0)) * 0.5
         if y_norm < 0.0 or y_norm > 1.0:
             return None
@@ -153,10 +174,9 @@ class BackupOverlay:
                     cv2.line(overlay, contour_points[i], contour_points[i + 1], self.cfg.color_line, 1)
             cv2.addWeighted(overlay, 0.6, frame, 0.4, 0, frame)
 
-        # 3) Horizont-Marker (optional, dezenter Hinweis wo der Sichtstrahl
-        #    waagerecht trifft — hilft beim Kalibrieren)
-        y_horizon_norm = self._ground_to_image_y(1e6)  # sehr weit weg
-        # Horizont liegt bei beta = -tilt -> y_norm = 0.5 - tilt/(vfov/2)*0.5
+        # 3) Horizont-Marker (dezenter Hinweis, wo der waagerechte Sichtstrahl
+        #    trifft — hilft beim Kalibrieren). Der Horizont (d->∞) liegt bei
+        #    alpha=0, also beta=-tilt -> y_norm = 0.5 - tilt/(vfov/2)*0.5.
         y_h = 0.5 - (self.tilt_rad / (self.vfov_rad / 2.0)) * 0.5
         if 0.0 <= y_h <= 1.0:
             y_px = int(round(y_h * (self.img_h - 1)))

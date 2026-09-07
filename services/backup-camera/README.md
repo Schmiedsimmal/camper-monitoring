@@ -39,7 +39,7 @@ Siehe Root-`.env.example`, Sektion *Backup-Camera Service*.
 | `OVERLAY_CAMERA_HEIGHT` | `0.6` | Kamera-Montagehöhe über Boden [m] |
 | `OVERLAY_CAMERA_TILT` | `15` | Neigung nach unten [Grad] |
 | `OVERLAY_CAMERA_HFOV` | `87` | Horizontaler Sichtwinkel [Grad] |
-| `OVERLAY_VEHICLE_WIDTH` | `2.3` | Fahrzeugbreite [m] |
+| `OVERLAY_VEHICLE_WIDTH` | `2.0` | Fahrzeugbreite [m] (Iveco Daily IV 35S12: 1996 mm) |
 | `OVERLAY_DISTANCE_LINES` | `1,2,3,5` | Abstände der Linien [m] |
 | `BACKUP_CAMERA_PORT` | `8080` | Web-Port nach außen |
 
