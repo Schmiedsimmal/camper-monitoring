@@ -1,0 +1,22 @@
+# Dies ist KEIN aktives Compose-File, sondern ein Snippet, das beim
+# Hinzufügen eines neuen Services in das Root-docker-compose.yml kopiert
+# und angepasst wird.
+
+services:
+  <mein-service>:
+    <<: *common
+    build:
+      context: ./services/<mein-service>
+      dockerfile: Dockerfile
+    container_name: <mein-service>
+    ports:
+      - "${MEIN_SERVICE_PORT:-808X}:8080"
+    # Nur bei Bedarf:
+    # runtime: nvidia
+    # environment:
+    #   - NVIDIA_VISIBLE_DEVICES=all
+    #   - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    # devices:
+    #   - /dev/...
+    # volumes:
+    #   - <mein-service>-data:/app/data

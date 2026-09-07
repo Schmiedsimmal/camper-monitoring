@@ -1,0 +1,71 @@
+# =============================================================================
+# Camper Monitoring - docker-compose
+#
+# Alle Services werden hier deklariert. Jeder Service hat sein eigenes
+# Build-Kontext unter services/<name>/ und seine eigene .env-Config (über das
+# Root-.env-File gesteuert).
+#
+# GPU-Zugriff: setzt die NVIDIA Container Runtime auf dem Jetson voraus
+# (siehe scripts/setup-jetson.sh).
+# =============================================================================
+
+x-common: &common
+  restart: unless-stopped
+  env_file:
+    - .env
+  environment:
+    - TZ=${TZ:-Europe/Berlin}
+
+services:
+  # ---------------------------------------------------------------------------
+  # Backup-Camera: Rückfahrkamera mit YOLO-Objekterkennung + Web-UI
+  # ---------------------------------------------------------------------------
+  backup-camera:
+    <<: *common
+    build:
+      context: ./services/backup-camera
+      dockerfile: Dockerfile
+    container_name: backup-camera
+    ports:
+      - "${BACKUP_CAMERA_PORT:-8080}:8080"
+    # GPU-Zugriff (NVIDIA Container Runtime). Auf Nicht-Jetson-Hosts
+    # (z.B. Dev auf x86) diese Zeilen auskommentieren.
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
+      - PYTHONUNBUFFERED=1
+      - TZ=${TZ:-Europe/Berlin}
+    devices:
+      # USB-Kamera (falls CAMERA_SOURCE=usb:N verwendet wird)
+      - /dev/video0:/dev/video0
+      # GPIO-Zugriff (12V-Trigger über Optokoppler)
+      - /dev/gpiomem:/dev/gpiomem
+    volumes:
+      # GPIO sysfs (read-only) für Pin-Reservierung
+      - /sys:/sys:ro
+      # Modell-Cache persistent (YOLO-Gewichte werden beim ersten Start
+      # heruntergeladen und als TensorRT-Engine zwischengespeichert)
+      - backup-camera-models:/app/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz', timeout=2)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  # ---------------------------------------------------------------------------
+  # PV-Monitor (Beispiel für einen zukünftigen Service - noch inaktiv)
+  # ---------------------------------------------------------------------------
+  # pv-monitor:
+  #   <<: *common
+  #   build:
+  #     context: ./services/pv-monitor
+  #     dockerfile: Dockerfile
+  #   container_name: pv-monitor
+  #   ports:
+  #     - "${PV_MONITOR_PORT:-8081}:8080"
+  #   # Kein GPU-Zugriff nötig, kein GPIO. Typisch: HTTP/Modbus zum Wechselrichter.
+
+volumes:
+  backup-camera-models:

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Camper Monitoring - Rueckfahrkamera</title>
+    <style>
+        :root {
+            --bg: #0f1115;
+            --panel: #1a1d24;
+            --accent: #2e7d32;
+            --warn: #c62828;
+            --text: #e6e6e6;
+            --muted: #8a8f98;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        }
+        header {
+            padding: 12px 20px;
+            background: var(--panel);
+            border-bottom: 1px solid #2a2f3a;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        header h1 { margin: 0; font-size: 18px; font-weight: 600; }
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 13px;
+            background: #23272f;
+        }
+        .dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--muted);
+        }
+        .dot.ok   { background: var(--accent); }
+        .dot.warn { background: var(--warn); }
+        main {
+            display: grid;
+            grid-template-columns: 1fr 320px;
+            gap: 16px;
+            padding: 16px;
+        }
+        @media (max-width: 900px) {
+            main { grid-template-columns: 1fr; }
+        }
+        .stream {
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            aspect-ratio: 16 / 9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .stream img { width: 100%; height: 100%; object-fit: contain; }
+        .panel {
+            background: var(--panel);
+            border-radius: 8px;
+            padding: 14px;
+        }
+        .panel h2 { margin: 0 0 10px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+        .kv { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #23272f; font-size: 14px; }
+        .kv:last-child { border-bottom: none; }
+        .kv .v { font-variant-numeric: tabular-nums; }
+        .ok    { color: var(--accent); }
+        .warn  { color: var(--warn); }
+        footer { padding: 10px 20px; color: var(--muted); font-size: 12px; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Rueckfahrkamera</h1>
+        <div>
+            <span class="status-pill"><span id="dot-trigger" class="dot"></span>Trigger</span>
+            <span class="status-pill"><span id="dot-camera"  class="dot"></span>Kamera</span>
+            <span class="status-pill"><span id="dot-model"   class="dot"></span>Modell</span>
+        </div>
+    </header>
+
+    <main>
+        <div class="stream">
+            <img id="stream" src="/stream" alt="Livestream">
+        </div>
+
+        <aside class="panel">
+            <h2>Status</h2>
+            <div class="kv"><span>Trigger aktiv</span><span id="trigger-active" class="v">-</span></div>
+            <div class="kv"><span>Trigger verfuegbar</span><span id="trigger-avail" class="v">-</span></div>
+            <div class="kv"><span>Kamera verbunden</span><span id="camera-open" class="v">-</span></div>
+            <div class="kv"><span>Modell geladen</span><span id="model-loaded" class="v">-</span></div>
+            <div class="kv"><span>Backend</span><span id="backend" class="v">-</span></div>
+            <div class="kv"><span>Device</span><span id="device" class="v">-</span></div>
+            <div class="kv"><span>FPS</span><span id="fps" class="v">-</span></div>
+            <div class="kv"><span>Erkennungen (akt. Frame)</span><span id="dets" class="v">-</span></div>
+        </aside>
+    </main>
+
+    <footer>
+        Camper Monitoring &middot; backup-camera &middot; YOLOv8 (COCO)
+    </footer>
+
+    <script>
+        const $ = (id) => document.getElementById(id);
+        const setDot = (el, ok) => {
+            el.classList.remove("ok", "warn");
+            el.classList.add(ok ? "ok" : "warn");
+        };
+        const setVal = (id, val, ok) => {
+            const el = $(id);
+            el.textContent = val;
+            el.classList.remove("ok", "warn");
+            if (ok === true)  el.classList.add("ok");
+            if (ok === false) el.classList.add("warn");
+        };
+
+        async function poll() {
+            try {
+                const r = await fetch("/status");
+                const s = await r.json();
+                setDot($("dot-trigger"), s.trigger_active);
+                setDot($("dot-camera"),  s.camera_open);
+                setDot($("dot-model"),   s.detector_loaded);
+
+                setVal("trigger-active", s.trigger_active ? "JA" : "NEIN", s.trigger_active);
+                setVal("trigger-avail",  s.trigger_available ? "JA" : "NEIN", s.trigger_available);
+                setVal("camera-open",    s.camera_open ? "JA" : "NEIN", s.camera_open);
+                setVal("model-loaded",   s.detector_loaded ? "JA" : "NEIN", s.detector_loaded);
+                setVal("backend",        s.using_engine ? "TensorRT" : "PyTorch", s.using_engine);
+                setVal("device",         s.device || "-");
+                setVal("fps",            s.fps.toFixed(1));
+                setVal("dets",           s.detections);
+            } catch (e) {
+                // Stream/Server nicht bereit - stillschweigend erneut versuchen.
+            }
+        }
+        poll();
+        setInterval(poll, 1000);
+    </script>
+</body>
+</html>

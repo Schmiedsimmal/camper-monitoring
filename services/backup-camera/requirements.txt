@@ -1,0 +1,17 @@
+# Python-Abhaeltigkeiten fuer backup-camera.
+# Base-Image (nexus.robobrain.cloud/sdk:latest) bringt bereits:
+#   - torch + CUDA, torchvision, opencv (cv2)
+# Hier nur die fehlenden Pakete.
+
+# Web-Stack
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# Objekterkennung (YOLOv8, COCO-vortrainiert).
+# ultralytics zieht keine torch-Wheels nach, da torch schon installiert ist.
+ultralytics==8.3.55
+
+# GPIO-Zugriff auf dem Jetson (aarch64). Auf x86-Dev-Maschinen wird gpiozero
+# beim Import kein GPIO-Backend finden - der Service faellt dann auf einen
+# Dummy-Trigger zurueck (siehe app/trigger.py).
+gpiozero==2.0.1; platform_machine == "aarch64"

@@ -1,0 +1,4 @@
+# Python-Abhängigkeiten für den neuen Service.
+# FastAPI + Uvicorn als Standard-Web-Stack (analog backup-camera).
+fastapi==0.115.6
+uvicorn[standard]==0.34.0

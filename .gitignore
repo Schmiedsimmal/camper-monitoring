@@ -1,0 +1,38 @@
+# Secrets / lokale Config
+.env
+.env.local
+*.secret
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Modelle / Gewichte (werden zur Laufzeit geladen, nicht einchecken)
+models/*.pt
+models/*.engine
+models/*.onnx
+!models/.gitkeep
+
+# Build artifacts
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+*.log

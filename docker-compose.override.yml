@@ -1,0 +1,27 @@
+# =============================================================================
+# Lokales Development-Override (x86 ohne NVIDIA-Runtime und GPIO).
+#
+# Diese Datei wird von docker compose automatisch neben docker-compose.yml
+# geladen und deaktiviert GPU- und GPIO-spezifische Einstellungen, die auf
+# Dev-Maschinen ohne NVIDIA Container Runtime / GPIO-Hardware zu Fehlern
+# fuehren wuerden.
+#
+# Auf dem Jetson: diese Datei loeschen oder umbenennen
+#   (mv docker-compose.override.yml docker-compose.override.yml.disabled)
+# =============================================================================
+
+services:
+  backup-camera:
+    # runtime: nvidia ist im Base-File gesetzt; hier ohne GPU laufen lassen.
+    runtime: ""
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=
+      - NVIDIA_DRIVER_CAPABILITIES=
+      - PYTHONUNBUFFERED=1
+      - TZ=${TZ:-Europe/Berlin}
+    # GPIO und Video-Devices auf x86-Dev-Maschinen nicht vorhanden.
+    # !reset setzt die Liste zurueck (docker compose v2+).
+    devices: !reset []
+    volumes:
+      - /sys:/sys:ro
+      - backup-camera-models:/app/models
