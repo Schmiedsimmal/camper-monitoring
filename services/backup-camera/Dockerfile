@@ -1,30 +1,25 @@
 # =============================================================================
-# backup-camera: Rueckfahrkamera mit YOLO-Objekterkennung + Web-UI
+# backup-camera: Rear-view camera with YOLO object detection + Web UI.
 #
-# Base-Image: nexus.robobrain.cloud/sdk:latest
-#   - Python 3.12
-#   - torch + CUDA (cu130), opencv (cv2) bereits enthalten
-#   - System-Libs (libgl1, libsm6, ...) bereits vorhanden
-#   - Container-User: 'ubuntu' (uid 1000), nicht root
-#   - GPU-Zugriff erfordert auf dem Host die NVIDIA Container Runtime
-#     (siehe scripts/setup-jetson.sh). Auf Hosts ohne GPU laeuft torch im
-#     CPU-Fallback.
+# Build context: repository root (see docker-compose.yml).
+# Base image: nexus.robobrain.cloud/sdk:latest
+#   - Python 3.12, torch + CUDA, opencv already included
+#   - Container user: 'ubuntu' (uid 1000), not root
 # =============================================================================
 FROM nexus.robobrain.cloud/sdk:latest
 
 WORKDIR /app
 
-# Python-Abhaeltigkeiten (nur die nicht im Base-Image enthaltenen).
-# torch, torchvision, opencv sind bereits im SDK-Image vorhanden.
-COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+# Shared library (camper-shared) + service dependencies.
+COPY shared/ /app/shared/
+COPY services/backup-camera/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir --user -r /tmp/requirements.txt
 
-# App-Code + Templates
-COPY --chown=ubuntu:ubuntu app/ ./app/
-COPY --chown=ubuntu:ubuntu templates/ ./templates/
+# Service code + templates.
+COPY --chown=ubuntu:ubuntu services/backup-camera/app/ /app/app/
+COPY --chown=ubuntu:ubuntu services/backup-camera/templates/ /app/templates/
 
-# Modell-Verzeichnis (Volume-Mount-Punkt). Base-Image laeuft als 'ubuntu',
-# daher kurz auf root wechseln fuer chown.
+# Model cache directory (volume mount point).
 USER root
 RUN mkdir -p /app/models && chown ubuntu:ubuntu /app/models
 USER ubuntu
@@ -33,6 +28,6 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=120s \
     CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz', timeout=2)" || exit 1
 
-USER ubuntu
 ENV PATH="/home/ubuntu/.local/bin:${PATH}"
+ENV PYTHONPATH="/app:${PYTHONPATH}"
 CMD ["python3", "-m", "app.main"]

@@ -1,22 +1,23 @@
 # =============================================================================
-# camera-calibration: Web-UI zur Kamerakalibrierung (Klick + Chessboard)
+# camera-calibration: Web UI for camera calibration (click + chessboard).
 #
-# Base-Image: nexus.robobrain.cloud/sdk:latest (opencv + numpy enthalten)
-# Service laeuft auf Port 8081, greift auf dieselbe USB-Kamera zu wie
-# backup-camera. Ergebnisse werden in ein Shared-Volume geschrieben, das
-# auch backup-camera liest.
+# Build context: repository root (see docker-compose.yml).
+# Base image: nexus.robobrain.cloud/sdk:latest (opencv + numpy included).
 # =============================================================================
 FROM nexus.robobrain.cloud/sdk:latest
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+# Shared library + service dependencies.
+COPY shared/ /app/shared/
+COPY services/camera-calibration/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir --user -r /tmp/requirements.txt
 
-COPY --chown=ubuntu:ubuntu app/ ./app/
-COPY --chown=ubuntu:ubuntu templates/ ./templates/
+# Service code + templates.
+COPY --chown=ubuntu:ubuntu services/camera-calibration/app/ /app/app/
+COPY --chown=ubuntu:ubuntu services/camera-calibration/templates/ /app/templates/
 
-# Shared-Verzeichnis für Kalibrierungsergebnisse (Volume-Mount-Punkt).
+# Calibration output directory (shared volume mount point).
 USER root
 RUN mkdir -p /app/calib && chown ubuntu:ubuntu /app/calib
 USER ubuntu
@@ -26,4 +27,5 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=30s \
     CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz', timeout=2)" || exit 1
 
 ENV PATH="/home/ubuntu/.local/bin:${PATH}"
+ENV PYTHONPATH="/app:${PYTHONPATH}"
 CMD ["python3", "-m", "app.main"]

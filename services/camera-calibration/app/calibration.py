@@ -1,21 +1,20 @@
-"""Kalibrierungs-Logik: Klick-Modus (Overlay-Geometrie) + Chessboard-Modus.
+"""Calibration logic: click mode (overlay geometry) + chessboard mode.
 
-Klick-Modus:
-  Der Benutzer klickt im Live-Bild auf Punkte, deren reale Abstände er
-  kennt (z.B. 1m, 2m, 3m Markierungen auf dem Boden). Aus mindestens 2
-  solchen (y_px, distance_m)-Paaren werden camera_height, camera_tilt
-  und camera_hfov zurückgerechnet.
+Click mode:
+  The user clicks points in the live image whose real distances are known
+  (e.g. 1m, 2m, 3m markers on the ground). From at least 2 such
+  (y_px, distance_m) pairs, camera_height, camera_tilt are fitted.
 
-  Geometrie (Seitenansicht):
-    alpha = atan(h / d)   # Winkel vom Horizont zum Bodenpunkt
+  Geometry (side view):
+    alpha = atan(h / d)   # angle from horizon to ground point
     y_norm = 0.5 + (alpha - tilt) / (vfov/2) * 0.5
 
-  Mit 2 Punkten (d1,y1), (d2,y2) lassen sich tilt und h/vfov auflösen.
-  Mit 3+ Punkten wird über Least-Squares gefittet.
+  With 3+ points a least-squares fit finds the tilt that minimizes
+  variance in the implied camera height.
 
-Chessboard-Modus:
-  Klassische OpenCV-calibrateCamera mit Schachbrett-Mustern. Liefert
-  Kameramatrix + Verzerrungskoeffizienten.
+Chessboard mode:
+  Classic OpenCV ``calibrateCamera`` with chessboard patterns. Returns
+  the camera matrix + distortion coefficients.
 """
 from __future__ import annotations
 
@@ -30,71 +29,56 @@ import numpy as np
 log = logging.getLogger(__name__)
 
 
-# ---- Klick-Modus: Overlay-Geometrie -----------------------------------------
+# -- Click mode: overlay geometry --------------------------------------------
 def fit_overlay_geometry(
     points: list[tuple[float, float]],
     img_w: int,
     img_h: int,
     hfov_deg: float,
 ) -> dict:
-    """Fit camera_height + camera_tilt aus (y_px, distance_m)-Paaren.
+    """Fit camera_height + camera_tilt from (y_px, distance_m) pairs.
 
-    points: Liste von (y_px, distance_m) — Pixel-y und realer Abstand.
-    img_w, img_h: Bildgröße.
-    hfov_deg: Horizontaler FOV (für vfov-Berechnung).
+    Args:
+        points: list of (y_px, distance_m) — pixel-y and real distance.
+        img_w, img_h: image dimensions.
+        hfov_deg: horizontal FOV (for vfov calculation).
 
-    Liefert dict mit camera_height, camera_tilt, residuals.
+    Returns:
+        dict with camera_height, camera_tilt, camera_hfov, residuals.
     """
     if len(points) < 2:
-        raise ValueError("Mindestens 2 Punkte nötig")
+        raise ValueError("At least 2 points required")
 
     hfov_rad = math.radians(hfov_deg)
     vfov_rad = 2.0 * math.atan(math.tan(hfov_rad / 2.0) * img_h / img_w)
 
-    # y_norm = 0.5 + (alpha - tilt) / (vfov/2) * 0.5
-    # => alpha = tilt + (y_norm - 0.5) * vfov
-    # Und: alpha = atan(h / d)
-    # => tan(alpha) = h / d
-    # => h = d * tan(alpha)
-    #
-    # Für alle Punkte muss h konstant sein:
-    # d_i * tan(tilt + (y_norm_i - 0.5) * vfov) = h
-    #
-    # Mit 2 Punkten: tan(a1) / tan(a2) = d2 / d1  (h kürzt sich)
-    # => a1 = atan(h/d1), a2 = atan(h/d2)
-    # tilt = a1 - (y_norm1 - 0.5) * vfov
-    # h = d1 * tan(a1)
-
-    # Least-Squares über alle Punkte: Finde tilt, sodass h minimal variiert.
-    # Wir probieren tilt im Bereich -45°..45° und finden das Minimum.
+    # Find the tilt that minimizes variance in implied camera height.
     best_tilt = 0.0
     best_var = float("inf")
     best_h = 0.0
 
     for tilt_try_deg in np.arange(-45, 46, 0.5):
         tilt_try = math.radians(tilt_try_deg)
-        hs = []
+        heights = []
         for y_px, d in points:
             y_norm = y_px / (img_h - 1)
             alpha = tilt_try + (y_norm - 0.5) * vfov_rad
             if alpha <= 0 or alpha >= math.pi / 2:
                 continue
-            h = d * math.tan(alpha)
-            hs.append(h)
-        if len(hs) < 2:
+            heights.append(d * math.tan(alpha))
+        if len(heights) < 2:
             continue
-        var = np.var(hs)
+        var = np.var(heights)
         if var < best_var:
             best_var = var
             best_tilt = tilt_try
-            best_h = float(np.mean(hs))
+            best_h = float(np.mean(heights))
 
     residuals = []
     for y_px, d in points:
         y_norm = y_px / (img_h - 1)
         alpha = best_tilt + (y_norm - 0.5) * vfov_rad
-        h_pred = d * math.tan(alpha)
-        residuals.append(abs(h_pred - best_h))
+        residuals.append(abs(d * math.tan(alpha) - best_h))
 
     return {
         "camera_height": round(best_h, 3),
@@ -106,9 +90,9 @@ def fit_overlay_geometry(
     }
 
 
-# ---- Chessboard-Modus: OpenCV calibrateCamera -------------------------------
+# -- Chessboard mode: OpenCV calibrateCamera ----------------------------------
 def detect_chessboard(frame, pattern_size: tuple[int, int]):
-    """Sucht Schachbrett-Ecken im Frame. Liefert (corners, gray) oder (None, gray)."""
+    """Detect chessboard corners in *frame*. Returns (corners, gray) or (None, gray)."""
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     found, corners = cv2.findChessboardCorners(
         gray, pattern_size,
@@ -122,20 +106,21 @@ def detect_chessboard(frame, pattern_size: tuple[int, int]):
 
 
 def run_chessboard_calibration(
-    samples: list, img_size: tuple[int, int], square_mm: float
+    samples: list, img_size: tuple[int, int],
 ) -> dict:
-    """Führt calibrateCamera durch.
+    """Run ``cv2.calibrateCamera`` on collected samples.
 
-    samples: Liste von (objpoints, imgpoints) — jeweils numpy-Arrays.
-    img_size: (width, height).
-    Liefert dict mit mtx, dist, rms.
+    Args:
+        samples: list of (objpoints, imgpoints) — numpy arrays each.
+        img_size: (width, height).
+
+    Returns:
+        dict with rms, mtx, dist, img_size.
     """
     objpoints = [s[0] for s in samples]
     imgpoints = [s[1] for s in samples]
 
-    objp = np.zeros((len(objpoints[0]), 3), np.float32)
-    # Wird von caller gesetzt; hier nur Kalibrierung.
-    ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(
+    ret, mtx, dist, _rvecs, _tvecs = cv2.calibrateCamera(
         objpoints, imgpoints, img_size, None, None,
     )
     return {
@@ -146,25 +131,17 @@ def run_chessboard_calibration(
     }
 
 
-# ---- Speichern / Laden ------------------------------------------------------
-def save_click_calibration(result: dict, path: Path) -> None:
-    """Speichert Klick-Kalibrierungsergebnis als JSON."""
+# -- Save / load --------------------------------------------------------------
+def save_json(data: dict, path: Path) -> None:
+    """Write *data* as JSON to *path*, creating parent dirs."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
-        json.dump({"type": "overlay_geometry", **result}, f, indent=2)
-    log.info("Overlay-Geometrie gespeichert: %s", path)
+        json.dump(data, f, indent=2)
+    log.info("Calibration saved: %s", path)
 
 
-def save_chessboard_calibration(result: dict, path: Path) -> None:
-    """Speichert Chessboard-Kalibrierungsergebnis als JSON."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
-        json.dump({"type": "chessboard", **result}, f, indent=2)
-    log.info("Chessboard-Kalibrierung gespeichert: %s", path)
-
-
-def load_calibration(path: Path) -> dict | None:
-    """Lädt Kalibrierungsergebnis aus JSON oder None."""
+def load_json(path: Path) -> dict | None:
+    """Load JSON from *path* or return None if it doesn't exist."""
     if not path.exists():
         return None
     with open(path) as f:

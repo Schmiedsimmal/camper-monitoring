@@ -1,14 +1,16 @@
-"""backup-camera Service-Entry-Point.
+"""backup-camera service entry point.
 
-Orchestriert Kamera, Detector, Trigger und Web-Server.
+Orchestrates camera, detector, trigger and web server.
 """
 from __future__ import annotations
 
 import logging
 import os
 
-from . import _runtime
-from .camera import CameraSource
+import uvicorn
+
+from shared.camera import CameraSource
+
 from .config import load_config
 from .detector import Detector
 from .overlay import BackupOverlay
@@ -25,31 +27,28 @@ log = logging.getLogger("backup-camera")
 def main() -> None:
     cfg = load_config()
 
-    # Runtime-Flags für Web-Modul (vermeidet zirkuläre Imports).
-    _runtime.GATED = cfg.trigger.gated
-
-    camera = CameraSource(cfg.camera)
+    camera = CameraSource(
+        cfg.camera.source, cfg.camera.width, cfg.camera.height, cfg.camera.fps,
+    )
     camera.start()
-    log.info("Kamera-Source gestartet: %s", cfg.camera.source)
+    log.info("Camera source started: %s", cfg.camera.source)
 
     detector = Detector(cfg.detector)
     try:
         detector.load()
-    except Exception as e:  # noqa: BLE001
-        log.error("Modell-Laden fehlgeschlagen: %s. Service läuft ohne Inferenz.", e)
+    except Exception as exc:  # noqa: BLE001
+        log.error("Model load failed: %s. Service runs without inference.", exc)
 
     trigger = make_trigger(cfg.trigger)
     log.info(
-        "Trigger bereit: available=%s, gated=%s",
+        "Trigger ready: available=%s, gated=%s",
         trigger.available, cfg.trigger.gated,
     )
 
     overlay = BackupOverlay(cfg.overlay, cfg.camera.width, cfg.camera.height)
-    log.info("Overlay bereit: enabled=%s", cfg.overlay.enabled)
+    log.info("Overlay ready: enabled=%s", cfg.overlay.enabled)
 
-    app = build_app(camera, detector, trigger, overlay)
-
-    import uvicorn
+    app = build_app(camera, detector, trigger, overlay, gated=cfg.trigger.gated)
     uvicorn.run(app, host="0.0.0.0", port=cfg.web.port, log_level="info")
 
 

@@ -1,14 +1,14 @@
-"""YOLOv8-Objekterkennung (COCO-vortrainiert).
+"""YOLOv8 object detection (COCO pretrained).
 
-Lädt das Modell beim ersten Start (Download via ultralytics, gecacht im
-Volume /app/models). Auf dem Jetson (CUDA) wird beim ersten Start zusätzlich
-eine TensorRT-Engine gebaut und gecacht — das beschleunigt die Inferenz
-deutlich (~5-10x). Bei Folgestarts wird die .engine direkt geladen.
+Loads the model on first start (download via ultralytics, cached in the
+``/app/models`` volume). On the Jetson (CUDA) a TensorRT engine is built
+and cached on first start — this speeds up inference significantly
+(~5-10x). On subsequent starts the ``.engine`` is loaded directly.
 
-Ablauf:
-  1. .pt-Datei sicher ins Volume cachen (Download falls nötig).
-  2. Auf CUDA + export_engine=true: .engine bauen (falls noch nicht vorhanden).
-  3. .engine laden wenn vorhanden, sonst .pt.
+Flow:
+  1. Cache the ``.pt`` file in the volume (download if needed).
+  2. On CUDA + ``export_engine=true``: build ``.engine`` (if not cached).
+  3. Load ``.engine`` if available, otherwise fall back to ``.pt``.
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ from .config import DetectorConfig
 
 log = logging.getLogger(__name__)
 
-# COCO-Klassennamen (80 Klassen, ultralytics-Default).
+# COCO class names (80 classes, ultralytics default).
 COCO_NAMES: list[str] = [
     "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train",
     "truck", "boat", "traffic light", "fire hydrant", "stop sign",
@@ -40,24 +40,20 @@ COCO_NAMES: list[str] = [
     "hair drier", "toothbrush",
 ]
 
-# BGR-Farben für häufige Verkehrsklassen (rot hervorheben).
+# BGR colors for common traffic classes (highlight person in red).
 CLASS_COLORS: dict[int, tuple[int, int, int]] = {
-    0: (0, 0, 255),    # person -> rot
-    1: (0, 255, 255),  # bicycle -> gelb
-    2: (0, 255, 0),    # car -> grün
+    0: (0, 0, 255),    # person -> red
+    1: (0, 255, 255),  # bicycle -> yellow
+    2: (0, 255, 0),    # car -> green
     3: (0, 165, 255),  # motorcycle -> orange
-    5: (255, 0, 0),    # bus -> blau
+    5: (255, 0, 0),    # bus -> blue
     7: (255, 255, 0),  # truck -> cyan
 }
 DEFAULT_COLOR = (200, 200, 200)
 
 
-def _is_engine(path: str) -> bool:
-    return path.lower().endswith((".engine", ".trt"))
-
-
 class Detector:
-    """Wrapper um ultralytics YOLO mit TensorRT-Caching."""
+    """Wrapper around ultralytics YOLO with TensorRT caching."""
 
     def __init__(self, cfg: DetectorConfig, models_dir: str = "/app/models") -> None:
         self.cfg = cfg
@@ -67,7 +63,7 @@ class Detector:
         self._device: str = ""
         self._using_engine: bool = False
 
-    # ---- Device -------------------------------------------------------------
+    # -- device ---------------------------------------------------------------
     def _resolve_device(self) -> str:
         if self.cfg.device and self.cfg.device.lower() != "auto":
             return self.cfg.device
@@ -81,51 +77,36 @@ class Detector:
     def _is_cuda(self) -> bool:
         return self._device.startswith("cuda")
 
-    # ---- Pfad-Helfer --------------------------------------------------------
+    # -- path helpers ---------------------------------------------------------
     def _pt_path(self) -> str:
-        """Pfad zur .pt-Datei im Volume."""
-        name = self.cfg.model
-        if not name.endswith(".pt"):
-            name = name + ".pt"
+        name = self.cfg.model if self.cfg.model.endswith(".pt") else self.cfg.model + ".pt"
         return os.path.join(self.models_dir, name)
 
     def _engine_path(self) -> str:
-        """Pfad zur TensorRT-Engine im Volume (abgeleitet aus dem Modellnamen)."""
         base = os.path.splitext(os.path.basename(self.cfg.model))[0]
-        suffix = f"_fp16" if self.cfg.half else "_fp32"
+        suffix = "_fp16" if self.cfg.half else "_fp32"
         return os.path.join(self.models_dir, f"{base}{suffix}.engine")
 
-    # ---- .pt cachen ---------------------------------------------------------
+    # -- .pt caching ----------------------------------------------------------
     def _ensure_pt_cached(self) -> str:
-        """Stellt sicher, dass die .pt-Datei im Volume liegt. Gibt den Pfad zurück.
-
-        Falls die Datei im Volume fehlt, wird sie via ultralytics heruntergeladen
-        und dann aus dem ultralytics-Cache ins Volume kopiert.
-        """
+        """Ensure the ``.pt`` file exists in the volume; return its path."""
         pt_path = self._pt_path()
         if os.path.exists(pt_path):
-            log.info("YOLO .pt aus Cache: %s", pt_path)
+            log.info("YOLO .pt from cache: %s", pt_path)
             return pt_path
 
-        # ultralytics herunterladen lassen. Ultralytics legt die Datei im CWD
-        # oder im ultralytics-Settings-Dir ab. Wir rufen YOLO mit dem nackten
-        # Namen auf und suchen dann die Datei.
         from ultralytics import YOLO
 
-        log.info("Lade YOLO .pt (Download falls noetig): %s", self.cfg.model)
-        # Ins models_dir wechseln, damit der Download dort landet.
+        log.info("Downloading YOLO .pt (if needed): %s", self.cfg.model)
         cwd = os.getcwd()
         try:
             os.chdir(self.models_dir)
-            model = YOLO(self.cfg.model)
+            YOLO(self.cfg.model)
         finally:
             os.chdir(cwd)
 
-        # ultralytics speichert die Datei typischerweise im CWD (hier models_dir)
-        # unter dem Originalnamen.
         downloaded = os.path.join(self.models_dir, os.path.basename(self.cfg.model))
         if not os.path.exists(downloaded):
-            # Fallback: ultralytics-Default-Verzeichnis durchsuchen.
             for cand in (
                 os.path.expanduser("~/.config/Ultralytics"),
                 os.path.expanduser("~/.cache/ultralytics"),
@@ -138,40 +119,32 @@ class Detector:
                                 break
         if os.path.exists(downloaded) and os.path.abspath(downloaded) != os.path.abspath(pt_path):
             shutil.copy(downloaded, pt_path)
-            log.info("YOLO .pt nach %s kopiert.", pt_path)
-        elif os.path.exists(pt_path):
-            pass  # schon am Zielort
-        else:
-            log.warning(
-                "Konnte .pt nicht im Volume cachen (%s). Nutze Download-Pfad %s.",
-                pt_path, downloaded,
-            )
+            log.info("YOLO .pt copied to %s", pt_path)
+        elif not os.path.exists(pt_path):
+            log.warning("Could not cache .pt in volume (%s). Using %s.", pt_path, downloaded)
             pt_path = downloaded
         return pt_path
 
-    # ---- TensorRT-Export ----------------------------------------------------
+    # -- TensorRT export ------------------------------------------------------
     def _maybe_export_engine(self, pt_path: str) -> str | None:
-        """Baut bei CUDA + export_engine eine TensorRT-Engine und cacht sie.
-
-        Gibt den Engine-Pfad zurück falls erfolgreich, sonst None.
-        """
+        """Build a TensorRT engine on CUDA + ``export_engine=true``; cache it."""
         if not self.cfg.export_engine:
-            log.info("TensorRT-Export deaktiviert (YOLO_EXPORT_ENGINE=false).")
+            log.info("TensorRT export disabled (YOLO_EXPORT_ENGINE=false).")
             return None
         if not self._is_cuda:
-            log.info("Kein CUDA -> TensorRT-Export übersprungen (CPU-Inferenz).")
+            log.info("No CUDA -> skipping TensorRT export (CPU inference).")
             return None
 
         engine_path = self._engine_path()
         if os.path.exists(engine_path):
-            log.info("TensorRT-Engine aus Cache: %s", engine_path)
+            log.info("TensorRT engine from cache: %s", engine_path)
             return engine_path
 
         from ultralytics import YOLO
 
         log.info(
-            "Baue TensorRT-Engine (imgsz=%d, half=%s). Das dauert beim ersten "
-            "Start einige Minuten - danach wird die .engine gecacht.",
+            "Building TensorRT engine (imgsz=%d, half=%s). This takes a few "
+            "minutes on first start — the .engine is cached afterwards.",
             self.cfg.img_size, self.cfg.half,
         )
         try:
@@ -181,54 +154,44 @@ class Detector:
                 imgsz=self.cfg.img_size,
                 half=self.cfg.half,
                 device=self._device,
-                dynamic=False,  # statische Input-Shape = schneller auf Jetson
+                dynamic=False,
                 simplify=True,
-                workspace=4,    # GB Workspace für TensorRT
+                workspace=4,
             )
-            # ultralytics schreibt die .engine typischerweise neben die .pt.
             exported_path = str(exported) if exported else None
             if exported_path and os.path.exists(exported_path):
                 if os.path.abspath(exported_path) != os.path.abspath(engine_path):
                     shutil.move(exported_path, engine_path)
-                log.info("TensorRT-Engine gebaut und gecacht: %s", engine_path)
+                log.info("TensorRT engine built and cached: %s", engine_path)
                 return engine_path
-            log.warning("TensorRT-Export lieferte keine Engine-Datei.")
+            log.warning("TensorRT export produced no engine file.")
             return None
-        except Exception as e:  # noqa: BLE001
-            log.warning(
-                "TensorRT-Export fehlgeschlagen (%s). Fallback auf .pt-Inferenz.", e,
-            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning("TensorRT export failed (%s). Falling back to .pt inference.", exc)
             return None
 
-    # ---- Load ---------------------------------------------------------------
+    # -- load -----------------------------------------------------------------
     def load(self) -> None:
         from ultralytics import YOLO
 
         self._device = self._resolve_device()
-        log.info("YOLO-Inferenz-Device: %s", self._device)
+        log.info("YOLO inference device: %s", self._device)
 
-        # 1) .pt sicher im Volume cachen.
         pt_path = self._ensure_pt_cached()
-
-        # 2) Auf CUDA: optional .engine bauen/cachen.
         engine_path = self._maybe_export_engine(pt_path)
 
-        # 3) .engine bevorzugen, sonst .pt.
         if engine_path and os.path.exists(engine_path):
-            log.info("Lade TensorRT-Engine: %s", engine_path)
+            log.info("Loading TensorRT engine: %s", engine_path)
             self._model = YOLO(engine_path)
             self._using_engine = True
         else:
-            log.info("Lade PyTorch-Modell: %s", pt_path)
+            log.info("Loading PyTorch model: %s", pt_path)
             self._model = YOLO(pt_path)
             self._using_engine = False
 
-        log.info(
-            "Modell bereit (engine=%s, device=%s).",
-            self._using_engine, self._device,
-        )
+        log.info("Model ready (engine=%s, device=%s).", self._using_engine, self._device)
 
-    # ---- Properties ---------------------------------------------------------
+    # -- properties -----------------------------------------------------------
     @property
     def loaded(self) -> bool:
         return self._model is not None
@@ -241,41 +204,36 @@ class Detector:
     def device(self) -> str:
         return self._device
 
-    # ---- Inferenz -----------------------------------------------------------
+    # -- inference ------------------------------------------------------------
     def detect(self, frame):
-        """Führt Inferenz aus und gibt das annotierte Frame + Metriken zurück."""
+        """Run inference and return the annotated frame + detection list."""
         if self._model is None:
             return frame, []
 
-        classes = self.cfg.classes if self.cfg.classes else None
-        # Bei TensorRT-Engine ist die Input-Size fix (img_size). ultralytics
-        # skaliert automatisch; wir müssen imgsz nur beim Export setzen.
+        classes = self.cfg.classes or None
         predict_kwargs: dict[str, Any] = dict(
             conf=self.cfg.conf_threshold,
             classes=classes,
             device=self._device,
             verbose=False,
         )
-        # Auf CUDA mit FP16-Engine: half=True beschleunigt weiter.
         if self._is_cuda and self._using_engine and self.cfg.half:
             predict_kwargs["half"] = True
 
         results = self._model.predict(frame, **predict_kwargs)
         detections = []
         for r in results:
-            boxes = r.boxes
-            for b in boxes:
+            for b in r.boxes:
                 cls_id = int(b.cls.item())
                 conf = float(b.conf.item())
                 x1, y1, x2, y2 = (int(v) for v in b.xyxy[0].tolist())
-                detections.append(
-                    {
-                        "class_id": cls_id,
-                        "label": COCO_NAMES[cls_id] if cls_id < len(COCO_NAMES) else str(cls_id),
-                        "conf": conf,
-                        "box": (x1, y1, x2, y2),
-                    }
-                )
+                label = COCO_NAMES[cls_id] if cls_id < len(COCO_NAMES) else str(cls_id)
+                detections.append({
+                    "class_id": cls_id,
+                    "label": label,
+                    "conf": conf,
+                    "box": (x1, y1, x2, y2),
+                })
                 self._draw_box(frame, x1, y1, x2, y2, cls_id, conf)
         return frame, detections
 

@@ -1,0 +1,11 @@
+.git
+.env
+.env.local
+*.secret
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.venv
+models/*.pt
+models/*.engine

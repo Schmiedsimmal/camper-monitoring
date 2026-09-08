@@ -1,31 +1,30 @@
-"""Minimal-Stub für einen neuen Camper-Monitoring-Service.
+"""Minimal stub for a new camper-monitoring service.
 
-Beim Anlegen eines neuen Services diese Datei als Startpunkt nehmen und
-die eigentliche Logik in eigene Module unter app/ auslagern.
+When creating a new service, use this file as a starting point and
+move the actual logic into separate modules under ``app/``.
 """
 from __future__ import annotations
 
 import os
 
+import uvicorn
 from fastapi import FastAPI
 
-app = FastAPI(title="<mein-service>")
+from shared.web import add_health_route
 
-
-@app.get("/healthz")
-async def healthz() -> dict:
-    return {"status": "ok"}
+app = FastAPI(title="<my-service>")
 
 
 @app.get("/")
 async def index() -> dict:
-    return {"service": "<mein-service>", "version": "0.1.0"}
+    return {"service": "<my-service>", "version": "0.1.0"}
+
+
+add_health_route(app)
 
 
 def main() -> None:
-    import uvicorn
-
-    port = int(os.environ.get("MEIN_SERVICE_PORT", "8080"))
+    port = int(os.environ.get("MY_SERVICE_PORT", "8080"))
     uvicorn.run(app, host="0.0.0.0", port=port)
 
 

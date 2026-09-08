@@ -1,9 +1,8 @@
-"""Kamera-Capture: vereinheitlicht RTSP- und USB-Quellen über OpenCV.
+"""Thread-safe USB/RTSP camera source backed by OpenCV.
 
-Unterstützt CAMERA_SOURCE:
-  - "rtsp://..."  → IP-Kamera über RTSP
-  - "usb:N"       → lokales V4L2-Device /dev/videoN
-  - "N" (int)     → Alias für usb:N
+OpenCV's ``VideoCapture`` blocks on RTSP reconnects, so the grab loop
+runs in a background thread and always holds the most recent frame.
+Supports ``usb:N``, ``rtsp://...`` and bare integer sources.
 """
 from __future__ import annotations
 
@@ -14,31 +13,26 @@ from typing import Iterator
 
 import cv2
 
-from .config import CameraConfig
-
 log = logging.getLogger(__name__)
 
 
 class CameraError(RuntimeError):
-    pass
+    """Raised when the camera source cannot be opened."""
 
 
 class CameraSource:
-    """Thread-sicherer Frame-Grabber.
+    """Thread-safe frame grabber for USB and RTSP cameras."""
 
-    OpenCVs VideoCapture blockiert beim Lesen von RTSP bei Verbindungsabbruch
-    gerne. Daher läuft der Grab in einem Hintergrund-Thread und hält immer den
-    aktuellsten Frame vor.
-    """
-
-    def __init__(self, cfg: CameraConfig) -> None:
-        self.cfg = cfg
+    def __init__(self, source: str, width: int, height: int, fps: int) -> None:
+        self._index = self._resolve_source(source)
+        self._width = width
+        self._height = height
+        self._fps = fps
         self._cap: cv2.VideoCapture | None = None
-        self._frame: cv2.typing.MatLike | None = None
+        self._frame = None
         self._lock = threading.Lock()
         self._running = False
         self._thread: threading.Thread | None = None
-        self._source_index = self._resolve_source(cfg.source)
 
     @staticmethod
     def _resolve_source(source: str) -> int | str:
@@ -47,12 +41,12 @@ class CameraSource:
             return int(s.split(":", 1)[1])
         if s.lower().startswith("rtsp"):
             return s
-        # reine Zahl -> USB-Index
         try:
             return int(s)
         except ValueError:
             return s
 
+    # -- lifecycle -----------------------------------------------------------
     def start(self) -> None:
         if self._running:
             return
@@ -68,15 +62,15 @@ class CameraSource:
             self._cap.release()
             self._cap = None
 
+    # -- internal ------------------------------------------------------------
     def _open(self) -> None:
-        log.info("Öffne Kamera-Quelle: %r", self._source_index)
-        cap = cv2.VideoCapture(self._source_index)
+        log.info("Opening camera source: %r", self._index)
+        cap = cv2.VideoCapture(self._index)
         if not cap.isOpened():
-            raise CameraError(f"Kamera-Quelle nicht öffnbar: {self._source_index!r}")
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cfg.width)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cfg.height)
-        cap.set(cv2.CAP_PROP_FPS, self.cfg.fps)
-        # Bei RTSP: Puffer klein halten für geringe Latenz.
+            raise CameraError(f"Cannot open camera source: {self._index!r}")
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self._width)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self._height)
+        cap.set(cv2.CAP_PROP_FPS, self._fps)
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         self._cap = cap
 
@@ -87,15 +81,15 @@ class CameraSource:
                 try:
                     self._open()
                     backoff = 1.0
-                except CameraError as e:
-                    log.warning("Kamera-Öffnung fehlgeschlagen (%s), retry in %.1fs", e, backoff)
+                except CameraError as exc:
+                    log.warning("Camera open failed (%s), retry in %.1fs", exc, backoff)
                     time.sleep(backoff)
                     backoff = min(backoff * 2, 10.0)
                     continue
 
             ok, frame = self._cap.read()
             if not ok or frame is None:
-                log.warning("Frame-Lesen fehlgeschlagen, reopen.")
+                log.warning("Frame read failed, reopening.")
                 self._cap.release()
                 self._cap = None
                 time.sleep(0.5)
@@ -104,16 +98,19 @@ class CameraSource:
             with self._lock:
                 self._frame = frame
 
+    # -- public API ----------------------------------------------------------
     def latest_frame(self):
+        """Return the most recent frame (BGR) or ``None``."""
         with self._lock:
             return None if self._frame is None else self._frame.copy()
 
     def is_open(self) -> bool:
+        """Return ``True`` if at least one frame has been captured."""
         with self._lock:
             return self._frame is not None
 
     def frames(self) -> Iterator:
-        """Iterator, der den jeweils aktuellsten Frame liefert."""
+        """Yield the latest frame in a loop (for streaming consumers)."""
         while self._running:
             frame = self.latest_frame()
             if frame is None:

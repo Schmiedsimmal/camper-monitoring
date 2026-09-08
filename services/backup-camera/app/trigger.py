@@ -1,8 +1,8 @@
-"""GPIO-Trigger: 12V-Rückfahrlichtsignal über Optokoppler.
+"""GPIO trigger: 12V reversing-light signal via optocoupler.
 
-Auf dem Jetson (aarch64) wird gpiozero mit dem Linux-Pin-Backend verwendet.
-Auf x86-Dev-Maschen ohne GPIO-Hardware fällt der Service auf einen
-DummyTrigger zurück (immer aktiv), damit die Pipeline getestet werden kann.
+On the Jetson (aarch64) ``gpiozero`` with the Linux pin backend is used.
+On x86 dev machines without GPIO hardware the service falls back to a
+``DummyTrigger`` (always active) so the pipeline can be tested.
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ class Trigger(Protocol):
 
 
 class DummyTrigger:
-    """Immer aktiv — für Dev/Tests ohne GPIO-Hardware."""
+    """Always active — for dev/testing without GPIO hardware."""
 
     @property
     def available(self) -> bool:
@@ -35,21 +35,20 @@ class DummyTrigger:
 
 
 class GpioTrigger:
-    """gpiozero-basierter Trigger am Jetson.
+    """gpiozero-based trigger on the Jetson.
 
-    active_low=true (Default für PC817-Schaltung): Pin liegt bei aktivem
-    12V-Signal auf GND, gpiozero.inverted=True liefert dann active=True.
+    active_low=True (default for PC817 circuit): the pin is pulled to GND
+    when the 12V signal is active; ``gpiozero`` with ``active_state=False``
+    reports ``is_active=True`` in that case.
     """
 
     def __init__(self, cfg: TriggerConfig) -> None:
         self.cfg = cfg
-        # Lazy import, damit das Modul auf Nicht-Jetson-Hosts importierbar bleibt.
+        # Lazy import so the module stays importable on non-Jetson hosts.
         from gpiozero import Button  # type: ignore
 
-        # pull_up=True hält den Pin intern auf High, der Optokoppler zieht
-        # ihn auf Low -> active_state=False entspricht "aktiv".
         pull_up = True
-        active_state = False if cfg.active_low else True
+        active_state = not cfg.active_low
         self._btn = Button(
             cfg.gpio_pin,
             pull_up=pull_up,
@@ -57,7 +56,7 @@ class GpioTrigger:
             bounce_time=0.05,
         )
         log.info(
-            "GpioTrigger initialisiert: Pin BCM %d, active_low=%s",
+            "GpioTrigger initialized: pin BCM %d, active_low=%s",
             cfg.gpio_pin, cfg.active_low,
         )
 
@@ -73,9 +72,9 @@ class GpioTrigger:
 def make_trigger(cfg: TriggerConfig) -> Trigger:
     try:
         return GpioTrigger(cfg)
-    except Exception as e:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         log.warning(
-            "GPIO-Trigger nicht verfügbar (%s). Verwende DummyTrigger (immer aktiv). "
-            "Auf x86-Dev-Maschen ist das erwartet.", e,
+            "GPIO trigger not available (%s). Using DummyTrigger (always active). "
+            "Expected on x86 dev machines.", exc,
         )
         return DummyTrigger()

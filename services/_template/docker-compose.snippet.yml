@@ -1,17 +1,16 @@
-# Dies ist KEIN aktives Compose-File, sondern ein Snippet, das beim
-# Hinzufügen eines neuen Services in das Root-docker-compose.yml kopiert
-# und angepasst wird.
+# This is NOT an active compose file, but a snippet to copy into the
+# root docker-compose.yml when adding a new service.
 
 services:
-  <mein-service>:
+  <my-service>:
     <<: *common
     build:
-      context: ./services/<mein-service>
-      dockerfile: Dockerfile
-    container_name: <mein-service>
+      context: .
+      dockerfile: services/<my-service>/Dockerfile
+    container_name: <my-service>
     ports:
-      - "${MEIN_SERVICE_PORT:-808X}:8080"
-    # Nur bei Bedarf:
+      - "${MY_SERVICE_PORT:-808X}:8080"
+    # Only if needed:
     # runtime: nvidia
     # environment:
     #   - NVIDIA_VISIBLE_DEVICES=all
@@ -19,4 +18,4 @@ services:
     # devices:
     #   - /dev/...
     # volumes:
-    #   - <mein-service>-data:/app/data
+    #   - <my-service>-data:/app/data

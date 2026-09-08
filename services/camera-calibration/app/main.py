@@ -1,4 +1,4 @@
-"""camera-calibration Service-Entry-Point."""
+"""camera-calibration service entry point."""
 from __future__ import annotations
 
 import logging
@@ -6,8 +6,9 @@ import os
 
 import uvicorn
 
-from .camera import CameraSource
-from .config import Config
+from shared.camera import CameraSource
+
+from .config import load_config
 from .web import build_app
 
 logging.basicConfig(
@@ -18,11 +19,13 @@ log = logging.getLogger("camera-calibration")
 
 
 def main() -> None:
-    cfg = Config()
+    cfg = load_config()
 
-    camera = CameraSource(cfg.camera_source, cfg.camera_width, cfg.camera_height, cfg.camera_fps)
+    camera = CameraSource(
+        cfg.camera_source, cfg.camera_width, cfg.camera_height, cfg.camera_fps,
+    )
     camera.start()
-    log.info("Kamera-Source gestartet: %s", cfg.camera_source)
+    log.info("Camera source started: %s", cfg.camera_source)
 
     app = build_app(camera, cfg)
     uvicorn.run(app, host="0.0.0.0", port=cfg.port, log_level="info")

@@ -23,8 +23,8 @@ services:
   backup-camera:
     <<: *common
     build:
-      context: ./services/backup-camera
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/backup-camera/Dockerfile
     container_name: backup-camera
     ports:
       - "${BACKUP_CAMERA_PORT:-8080}:8080"
@@ -73,8 +73,8 @@ services:
   camera-calibration:
     <<: *common
     build:
-      context: ./services/camera-calibration
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/camera-calibration/Dockerfile
     container_name: camera-calibration
     ports:
       - "${CAMERA_CALIBRATION_PORT:-8081}:8080"

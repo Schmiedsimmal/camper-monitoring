@@ -1,41 +1,32 @@
-"""Config für den camera-calibration-Service."""
+"""Configuration for the camera-calibration service."""
 from __future__ import annotations
 
-import os
+from dataclasses import dataclass, field
+
+from shared.env import env_float, env_int, env_str
 
 
-def _env(name: str, default: str) -> str:
-    return os.environ.get(name, default)
-
-
-def _env_int(name: str, default: int) -> int:
-    try:
-        return int(os.environ.get(name, str(default)))
-    except (TypeError, ValueError):
-        return default
-
-
-def _env_float(name: str, default: float) -> float:
-    try:
-        return float(os.environ.get(name, str(default)))
-    except (TypeError, ValueError):
-        return default
-
-
+@dataclass
 class Config:
-    # USB-Kamera (gleiche Quelle wie backup-camera).
-    camera_source: str = _env("CAMERA_SOURCE", "usb:0")
-    camera_width: int = _env_int("CAMERA_WIDTH", 1280)
-    camera_height: int = _env_int("CAMERA_HEIGHT", 720)
-    camera_fps: int = _env_int("CAMERA_FPS", 15)
+    # Camera (same source as backup-camera).
+    camera_source: str = field(default_factory=lambda: env_str("CAMERA_SOURCE", "usb:0"))
+    camera_width: int = field(default_factory=lambda: env_int("CAMERA_WIDTH", 1280))
+    camera_height: int = field(default_factory=lambda: env_int("CAMERA_HEIGHT", 720))
+    camera_fps: int = field(default_factory=lambda: env_int("CAMERA_FPS", 15))
 
-    # Web-Port.
-    port: int = _env_int("CAMERA_CALIBRATION_PORT", 8080)
+    # Web port.
+    port: int = field(default_factory=lambda: env_int("CAMERA_CALIBRATION_PORT", 8080))
 
-    # Ausgabe-Verzeichnis für Kalibrierungsergebnisse (Shared-Volume).
-    calib_dir: str = _env("CALIB_DIR", "/app/calib")
+    # Output directory for calibration results (shared volume).
+    calib_dir: str = field(default_factory=lambda: env_str("CALIB_DIR", "/app/calib"))
 
-    # Chessboard-Parameter.
-    chessboard_cols: int = _env_int("CHESSBOARD_COLS", 9)
-    chessboard_rows: int = _env_int("CHESSBOARD_ROWS", 6)
-    chessboard_square_mm: float = _env_float("CHESSBOARD_SQUARE_MM", 25.0)
+    # Chessboard parameters.
+    chessboard_cols: int = field(default_factory=lambda: env_int("CHESSBOARD_COLS", 9))
+    chessboard_rows: int = field(default_factory=lambda: env_int("CHESSBOARD_ROWS", 6))
+    chessboard_square_mm: float = field(
+        default_factory=lambda: env_float("CHESSBOARD_SQUARE_MM", 25.0)
+    )
+
+
+def load_config() -> Config:
+    return Config()
