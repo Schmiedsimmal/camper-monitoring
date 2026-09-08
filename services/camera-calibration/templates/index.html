@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Camera Calibration - Camper Monitoring</title>
+<style>
+  body { font-family: sans-serif; margin: 0; padding: 20px; background: #1a1a1a; color: #eee; }
+  h1 { margin-top: 0; }
+  h2 { border-bottom: 1px solid #444; padding-bottom: 5px; }
+  .layout { display: flex; gap: 20px; flex-wrap: wrap; }
+  .stream-box { flex: 1; min-width: 480px; }
+  .controls { flex: 1; min-width: 320px; max-width: 480px; }
+  .stream { width: 100%; border: 2px solid #444; border-radius: 4px; cursor: crosshair; }
+  .status { background: #222; padding: 10px; border-radius: 4px; margin: 10px 0; font-family: monospace; font-size: 13px; }
+  .btn { background: #2a6; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin: 4px 2px; font-size: 14px; }
+  .btn:hover { background: #3b7; }
+  .btn-red { background: #a33; }
+  .btn-red:hover { background: #b44; }
+  .btn-blue { background: #36a; }
+  .btn-blue:hover { background: #47b; }
+  input { background: #333; color: #eee; border: 1px solid #555; padding: 6px; border-radius: 4px; width: 80px; }
+  label { display: inline-block; width: 100px; }
+  .row { margin: 8px 0; }
+  .result { background: #002; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 13px; margin: 10px 0; white-space: pre-wrap; }
+  .tab { display: inline-block; padding: 8px 20px; background: #333; border-radius: 4px 4px 0 0; cursor: pointer; margin-right: 2px; }
+  .tab.active { background: #2a6; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+  th, td { border: 1px solid #444; padding: 6px; text-align: left; }
+  th { background: #333; }
+</style>
+</head>
+<body>
+<h1>Camera Calibration</h1>
+
+<div class="status" id="status">Lade Status...</div>
+
+<div class="layout">
+  <div class="stream-box">
+    <h2>Live-Stream</h2>
+    <img class="stream" id="stream" src="/stream" alt="Kamera-Stream" onclick="onStreamClick(event)">
+    <p style="font-size:12px;color:#888">Klick-Modus: Klicke auf das Bild, um einen Abstandspunkt zu markieren.</p>
+  </div>
+
+  <div class="controls">
+    <div class="tab active" onclick="showTab('click')">Klick-Modus</div>
+    <div class="tab" onclick="showTab('chessboard')">Chessboard</div>
+
+    <!-- Klick-Modus -->
+    <div class="tab-content active" id="tab-click">
+      <h2>Overlay-Geometrie kalibrieren</h2>
+      <p style="font-size:13px">
+        Lege Markierungen bei bekannten Abständen (1m, 2m, 3m) auf den Boden
+        und klicke im Bild auf die jeweilige Position. Trage den Abstand ein
+        und klicke auf "Punkt hinzufügen".
+      </p>
+      <div class="row">
+        <label>Abstand [m]:</label>
+        <input type="number" id="click-distance" value="1" step="0.5" min="0.1">
+      </div>
+      <div class="row">
+        <label>y-Pixel:</label>
+        <input type="number" id="click-ypx" value="0" readonly>
+        (wird durch Klick gesetzt)
+      </div>
+      <div class="row">
+        <button class="btn" onclick="addClickPoint()">Punkt hinzufügen</button>
+        <button class="btn btn-red" onclick="clearClickPoints()">Alle löschen</button>
+      </div>
+      <div class="row">
+        <label>HFOV [°]:</label>
+        <input type="number" id="click-hfov" value="130" step="1">
+        <button class="btn btn-blue" onclick="fitClick()">Geometrie fitten</button>
+      </div>
+      <div class="result" id="click-result">Noch keine Punkte.</div>
+    </div>
+
+    <!-- Chessboard-Modus -->
+    <div class="tab-content" id="tab-chessboard">
+      <h2>Chessboard-Kalibrierung</h2>
+      <p style="font-size:13px">
+        Halte ein Schachbrett-Muster (9x6 innere Ecken, 25mm Quadrate) vor die
+        Kamera. Nimm mindestens 15 Bilder aus verschiedenen Winkeln auf.
+      </p>
+      <div class="row">
+        <button class="btn" onclick="captureChessboard()">Bild aufnehmen</button>
+        <button class="btn btn-red" onclick="clearChessboard()">Alle löschen</button>
+      </div>
+      <div class="row">
+        <span id="chessboard-count">0 Bilder aufgenommen</span>
+      </div>
+      <div class="row">
+        <button class="btn btn-blue" onclick="calibrateChessboard()">Kalibrierung durchführen</button>
+      </div>
+      <div class="result" id="chessboard-result">Noch keine Bilder.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---- Tab-Umschaltung ----
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('tab-' + name).classList.add('active');
+}
+
+// ---- Status aktualisieren ----
+async function updateStatus() {
+  try {
+    const r = await fetch('/status');
+    const d = await r.json();
+    document.getElementById('status').textContent =
+      'Kamera: ' + (d.camera_open ? 'OK' : 'NICHT OK') +
+      ' | Klick-Punkte: ' + d.click_points +
+      ' | Chessboard-Bilder: ' + d.chessboard_samples;
+  } catch (e) {
+    document.getElementById('status').textContent = 'Status: Fehler';
+  }
+}
+setInterval(updateStatus, 2000);
+updateStatus();
+
+// ---- Klick-Modus ----
+function onStreamClick(e) {
+  const img = e.target;
+  // y-Koordinate im Bild (relativ zur angezeigten Größe)
+  const rect = img.getBoundingClientRect();
+  const yRel = (e.clientY - rect.top) / rect.height;
+  // Zur Originalbildgröße skalieren
+  const yPx = Math.round(yRel * 720);  // TODO: dynamisch aus Config
+  document.getElementById('click-ypx').value = yPx;
+}
+
+async function addClickPoint() {
+  const yPx = parseInt(document.getElementById('click-ypx').value);
+  const d = parseFloat(document.getElementById('click-distance').value);
+  if (yPx <= 0 || d <= 0) { alert('y-Pixel und Abstand müssen positiv sein'); return; }
+  const r = await fetch('/click/add', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({y_px: yPx, distance_m: d}),
+  });
+  const res = await r.json();
+  if (res.error) { alert(res.error); return; }
+  document.getElementById('click-result').textContent =
+    `${res.n_points} Punkt(e) gespeichert. Mindestens 2 nötig zum Fitten.`;
+}
+
+async function clearClickPoints() {
+  await fetch('/click/clear', {method: 'DELETE'});
+  document.getElementById('click-result').textContent = 'Alle Punkte gelöscht.';
+}
+
+async function fitClick() {
+  const hfov = parseFloat(document.getElementById('click-hfov').value);
+  const r = await fetch('/click/fit', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({hfov: hfov}),
+  });
+  const res = await r.json();
+  if (res.error) { alert(res.error); return; }
+  const r2 = res.result;
+  document.getElementById('click-result').textContent =
+    'Ergebnis:\n' +
+    '  camera_height = ' + r2.camera_height + ' m\n' +
+    '  camera_tilt   = ' + r2.camera_tilt + ' °\n' +
+    '  camera_hfov   = ' + r2.camera_hfov + ' °\n' +
+    '  mean_residual = ' + r2.mean_residual + ' m\n' +
+    '  n_points      = ' + r2.n_points + '\n\n' +
+    'In .env eintragen:\n' +
+    'OVERLAY_CAMERA_HEIGHT=' + r2.camera_height + '\n' +
+    'OVERLAY_CAMERA_TILT=' + r2.camera_tilt + '\n' +
+    'OVERLAY_CAMERA_HFOV=' + r2.camera_hfov;
+}
+
+// ---- Chessboard-Modus ----
+async function captureChessboard() {
+  const r = await fetch('/chessboard/capture', {method: 'POST'});
+  const res = await r.json();
+  if (res.error) { alert(res.error); return; }
+  if (!res.ok) {
+    document.getElementById('chessboard-result').textContent =
+      'Kein Schachbrett erkannt. Versuche einen anderen Winkel.';
+    return;
+  }
+  document.getElementById('chessboard-count').textContent =
+    res.n_samples + ' Bilder aufgenommen';
+  document.getElementById('chessboard-result').textContent =
+    res.n_samples + ' Bild(er) aufgenommen. Mindestens 5 nötig.';
+}
+
+async function clearChessboard() {
+  await fetch('/chessboard/clear', {method: 'DELETE'});
+  document.getElementById('chessboard-count').textContent = '0 Bilder aufgenommen';
+  document.getElementById('chessboard-result').textContent = 'Alle Bilder gelöscht.';
+}
+
+async function calibrateChessboard() {
+  const r = await fetch('/chessboard/calibrate', {method: 'POST'});
+  const res = await r.json();
+  if (res.error) { alert(res.error); return; }
+  const r2 = res.result;
+  document.getElementById('chessboard-result').textContent =
+    'Ergebnis:\n' +
+    '  RMS = ' + r2.rms + '\n' +
+    '  Kameramatrix = ' + JSON.stringify(r2.mtx) + '\n' +
+    '  Verzerrung   = ' + JSON.stringify(r2.dist) + '\n' +
+    '  Bildgröße    = ' + r2.img_size;
+}
+</script>
+</body>
+</html>

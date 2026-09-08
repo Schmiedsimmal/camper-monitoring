@@ -70,4 +70,24 @@ else
     log "User '$USER' ist bereits in Gruppe 'gpio'."
 fi
 
+# --- Autostart: Docker + Camper-Monitoring beim Booten ------------------------
+log "Aktiviere Docker beim Booten (systemctl enable docker)."
+sudo systemctl enable docker
+
+# systemd-Service für den Compose-Stack installieren.
+SERVICE_SRC="$(cd "$(dirname "$0")" && pwd)/camper-monitoring.service"
+SERVICE_DST=/etc/systemd/system/camper-monitoring.service
+if [[ ! -f "$SERVICE_DST" ]] || ! diff -q "$SERVICE_SRC" "$SERVICE_DST" >/dev/null 2>&1; then
+    log "Installiere systemd-Service: $SERVICE_DST"
+    # WorkingDirectory im Service-File an das Repo-Verzeichnis anpassen.
+    REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+    sudo sed "s|WorkingDirectory=.*|WorkingDirectory=$REPO_DIR|" "$SERVICE_SRC" \
+        | sudo tee "$SERVICE_DST" >/dev/null
+    sudo systemctl daemon-reload
+    sudo systemctl enable camper-monitoring
+    log "Autostart aktiviert: Container starten beim Booten automatisch."
+else
+    log "systemd-Service bereits installiert und aktuell."
+fi
+
 log "Fertig. Siehe README.md für den nächsten Schritt (docker compose up)."

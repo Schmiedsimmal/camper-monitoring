@@ -1,0 +1,3 @@
+# Nur FastAPI + Uvicorn. OpenCV + numpy sind im SDK-Base-Image enthalten.
+fastapi>=0.110
+uvicorn[standard]>=0.29

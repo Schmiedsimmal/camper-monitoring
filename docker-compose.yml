@@ -67,5 +67,30 @@ services:
   #     - "${PV_MONITOR_PORT:-8081}:8080"
   #   # Kein GPU-Zugriff nötig, kein GPIO. Typisch: HTTP/Modbus zum Wechselrichter.
 
+  # ---------------------------------------------------------------------------
+  # Camera-Calibration: Web-UI zur Kamerakalibrierung (Klick + Chessboard)
+  # ---------------------------------------------------------------------------
+  camera-calibration:
+    <<: *common
+    build:
+      context: ./services/camera-calibration
+      dockerfile: Dockerfile
+    container_name: camera-calibration
+    ports:
+      - "${CAMERA_CALIBRATION_PORT:-8081}:8080"
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics
+      - PYTHONUNBUFFERED=1
+      - TZ=${TZ:-Europe/Berlin}
+    devices:
+      # Gleiche USB-Kamera wie backup-camera
+      - /dev/video0:/dev/video0
+    volumes:
+      # Shared-Volume für Kalibrierungsergebnisse (backup-camera liest diese)
+      - camera-calibration-data:/app/calib
+
 volumes:
   backup-camera-models:
+  camera-calibration-data:

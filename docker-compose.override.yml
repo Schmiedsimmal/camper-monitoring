@@ -28,3 +28,18 @@ services:
     volumes:
       - /sys:/sys:ro
       - backup-camera-models:/app/models
+
+  # ---------------------------------------------------------------------------
+  # camera-calibration: Dev-Override (gleiche Anpassungen wie backup-camera)
+  # ---------------------------------------------------------------------------
+  camera-calibration:
+    runtime: ""
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=
+      - NVIDIA_DRIVER_CAPABILITIES=
+      - PYTHONUNBUFFERED=1
+      - TZ=${TZ:-Europe/Berlin}
+    devices: !override
+      - /dev/video6:/dev/video0
+    volumes:
+      - camera-calibration-data:/app/calib
